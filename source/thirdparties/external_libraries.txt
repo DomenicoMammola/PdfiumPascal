@@ -1,0 +1,6 @@
+Clone (mandatory):
+https://github.com/ahausladen/PdfiumLib.git
+Clone (optional):
+https://github.com/graphics32/graphics32.git
+Clone (optional):
+https://github.com/AngusJohnson/Image32.git
