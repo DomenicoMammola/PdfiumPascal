@@ -38,6 +38,7 @@
 #iOSDevice64/
 #Linux64/
 x86_64-linux/
+x86_64-win64/
 
 # Delphi compiler-generated binaries (safe to delete)
 *.exe
