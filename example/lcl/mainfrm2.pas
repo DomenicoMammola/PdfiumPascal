@@ -70,7 +70,7 @@ implementation
 
 uses
   TypInfo, Printers,
-  PdfiumLaz, PdfiumGraphics32, PdfiumImage32;
+  PdfiumLaz, (*PdfiumGraphics32,*) PdfiumImage32;
 
 {$R *.lfm}
 
@@ -105,6 +105,7 @@ begin
   FCtrl.Color := clRed;
   FCtrl.AllowFormEvents:= true;
   FCtrl.OnWebLinkClick:= @OnWebLinkClick;
+  FThumbnailsCtrl.ViewControl := FCtrl;
   {$IFDEF UNIX}
   {$IFNDEF LCL_CTRL}
   FCtrl.BufferedPageDraw := false;
@@ -143,7 +144,7 @@ procedure TfrmMain.CBGraphicBackendChange(Sender: TObject);
 begin
   case CBGraphicBackend.ItemIndex of
     0: GraphicsBackend_DrawPageToCanvas:= @PdfiumLaz.DrawPageToCanvas;
-    1: GraphicsBackend_DrawPageToCanvas:= @PdfiumGraphics32.DrawPageToCanvas;
+    //1: GraphicsBackend_DrawPageToCanvas:= @PdfiumGraphics32.DrawPageToCanvas;
     2: GraphicsBackend_DrawPageToCanvas:= @PdfiumImage32.DrawPageToCanvas;
   end;
 end;

@@ -108,6 +108,7 @@ type
     procedure LoadFromFile(const FileName: String; const Password: String = ''; LoadOption: TPdfDocumentLoadOption = dloDefault);
     function GotoNextPage: Boolean;
     function GotoPrevPage: Boolean;
+    function GotoPage(const aPageIndex: integer): Boolean;
     procedure HightlightText(const SearchText: string; MatchCase, MatchWholeWord: Boolean);
     // explanation here: https://forum.lazarus.freepascal.org/index.php?topic=38041.0
     procedure SetBounds(aLeft, aTop, aWidth, aHeight: integer); override;
@@ -800,24 +801,25 @@ end;
 
 function TPdfPageViewControl.GotoNextPage: Boolean;
 begin
-  Result := false;
-  if PageIndexValid and (FPageIndex < FDocument.PageCount - 1) then
-  begin
-    FHighlightTextRects.Clear;
-    inc(FPageIndex);
-    AdjustGeometry;
-    Invalidate;
-    Result := true;
-  end;
+  Result := GotoPage(FPageIndex + 1);
 end;
 
 function TPdfPageViewControl.GotoPrevPage: Boolean;
 begin
+  Result := GotoPage(FPageIndex - 1);
+end;
+
+function TPdfPageViewControl.GotoPage(const aPageIndex: integer): Boolean;
+begin
   Result := false;
-  if PageIndexValid and (FPageIndex > 0) then
+
+  if (aPageIndex = FPageIndex) then
+    exit;
+
+  if (FDocument.Active) and (aPageIndex < FDocument.PageCount) and (aPageIndex >= 0) then
   begin
     FHighlightTextRects.Clear;
-    dec(FPageIndex);
+    FPageIndex := aPageIndex;
     AdjustGeometry;
     Invalidate;
     Result := true;
