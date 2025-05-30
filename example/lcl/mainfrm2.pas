@@ -70,7 +70,7 @@ implementation
 
 uses
   TypInfo, Printers,
-  PdfiumLaz, (*PdfiumGraphics32,*) PdfiumImage32;
+  PdfiumLaz, PdfiumGraphics32, PdfiumImage32;
 
 {$R *.lfm}
 
@@ -144,7 +144,7 @@ procedure TfrmMain.CBGraphicBackendChange(Sender: TObject);
 begin
   case CBGraphicBackend.ItemIndex of
     0: GraphicsBackend_DrawPageToCanvas:= @PdfiumLaz.DrawPageToCanvas;
-    //1: GraphicsBackend_DrawPageToCanvas:= @PdfiumGraphics32.DrawPageToCanvas;
+    1: GraphicsBackend_DrawPageToCanvas:= @PdfiumGraphics32.DrawPageToCanvas;
     2: GraphicsBackend_DrawPageToCanvas:= @PdfiumImage32.DrawPageToCanvas;
   end;
 end;

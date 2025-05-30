@@ -93,12 +93,15 @@ type
     FScrollbar : TScrollBar;
     FPanel : TPdfThumbnailsPanel;
     FViewControl : TPdfPageViewControl;
+    function GetTextColor: TColor;
+    procedure SetTextColor(AValue: TColor);
     procedure SetDocument(AValue: TPdfDocument);
     procedure OnChangeScrollbar(aSender: TObject);
     procedure OnClickOnThumbnail(aPageIdx : integer);
   public
     constructor Create(TheOwner: TComponent); override;
     destructor Destroy; override;
+    property TextColor : TColor read GetTextColor write SetTextColor;
     property Document : TPdfDocument read FDocument write SetDocument;
     property ViewControl : TPdfPageViewControl read FViewControl write FViewControl;
   end;
@@ -122,7 +125,7 @@ type
 implementation
 
 uses
-  SysUtils, Math, LCLIntf, LCLType;
+  SysUtils, Math, LCLIntf, LCLType, Types;
 
 type
 
@@ -289,6 +292,7 @@ var
   curData : TPageThumbData;
   pw, ph, vx, vy : integer;
   nbp : String;
+  sz : TSize;
 begin
   Canvas.Brush.Color:= Self.Color;
   nbp := IntToStr(aPageIndex + 1);
@@ -303,9 +307,10 @@ begin
   end;
 
   Canvas.Draw(curData.viewportX + aDrawingRect.Left, curData.viewportY, curData.CachedBitmap);
-  Canvas.Pen.Color:= Self.TextColor;
-  pw := Canvas.TextExtent(nbp).Width;
-  Canvas.TextOut(aDrawingRect.Left + ((aDrawingRect.Width - pw) div 2), aDrawingRect.Bottom - FMarginWidth, nbp);
+  Canvas.Font.Color := Self.TextColor;
+  Canvas.Font.Size := 10;
+  sz := Canvas.TextExtent(nbp);
+  Canvas.TextOut(aDrawingRect.Left + ((aDrawingRect.Width - sz.Width) div 2), aDrawingRect.Bottom - FMarginWidth , nbp); //aDrawingRect.Bottom - ((aDrawingRect.Bottom - curData.viewportY  - sz.Height) div 2) + sz.Height , nbp);
 end;
 
 procedure TPdfThumbnailsPanel.CalculateGeometryOfPage(const aDrawingRect: TRect; const aPage : TPdfPage; out aPageWidth, aPageHeight, aViewportX, aViewportY: integer);
@@ -443,7 +448,7 @@ begin
   FScrollbar := nil;
   FPages := TObjectList.Create(true);
   Color := clDkGray;
-  FTextColor := clBlack;
+  FTextColor := clWhite;
   FMarginWidth := 20;
   FOnClickOnThumbnail := nil;
 end;
@@ -464,6 +469,11 @@ begin
   FPanel.Document := FDocument;
 end;
 
+function TPdfThumbnailsControl.GetTextColor: TColor;
+begin
+  Result := FPanel.TextColor;
+end;
+
 procedure TPdfThumbnailsControl.OnChangeScrollbar(aSender: TObject);
 begin
   FPanel.Invalidate;
@@ -473,6 +483,11 @@ procedure TPdfThumbnailsControl.OnClickOnThumbnail(aPageIdx: integer);
 begin
   if Assigned(FViewControl) then
     FViewControl.GotoPage(aPageIdx);
+end;
+
+procedure TPdfThumbnailsControl.SetTextColor(AValue: TColor);
+begin
+  FPanel.TextColor:= AValue;
 end;
 
 constructor TPdfThumbnailsControl.Create(TheOwner: TComponent);
