@@ -22,6 +22,7 @@ type
     BtnRotateLeft: TButton;
     BtnRotateRight: TButton;
     CBGraphicBackend: TComboBox;
+    CBThumbnailsPanel: TComboBox;
     OpenButton: TButton;
     chkLCDOptimize: TCheckBox;
     chkSmoothScroll: TCheckBox;
@@ -38,6 +39,7 @@ type
     procedure BtnRotateLeftClick(Sender: TObject);
     procedure BtnRotateRightClick(Sender: TObject);
     procedure CBGraphicBackendChange(Sender: TObject);
+    procedure CBThumbnailsPanelChange(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure btnPrevClick(Sender: TObject);
     procedure btnNextClick(Sender: TObject);
@@ -99,6 +101,8 @@ begin
   FThumbnailsCtrl.Align:= alBottom;
   FThumbnailsCtrl.Height:= 200;
   FThumbnailsCtrl.Color:= clDkGray;
+  FThumbnailsCtrl.Visible := false;
+  FThumbnailsCtrl.Options := [tpoMovePages];
   FCtrl := TPdfPageViewControl.Create(Self);
   FCtrl.Parent := Self;
   FCtrl.Align := alClient;
@@ -112,6 +116,7 @@ begin
   {$ENDIF}
   {$ENDIF}
   CBGraphicBackendChange(nil);
+  CBThumbnailsPanelChange(nil);
 
   FCtrl.ScaleMode := smFitAuto;
 
@@ -143,9 +148,44 @@ end;
 procedure TfrmMain.CBGraphicBackendChange(Sender: TObject);
 begin
   case CBGraphicBackend.ItemIndex of
-    0: GraphicsBackend_DrawPageToCanvas:= @PdfiumLaz.DrawPageToCanvas;
-    1: GraphicsBackend_DrawPageToCanvas:= @PdfiumGraphics32.DrawPageToCanvas;
-    2: GraphicsBackend_DrawPageToCanvas:= @PdfiumImage32.DrawPageToCanvas;
+    0: begin
+         GraphicsBackend_DrawPageToCanvas:= @PdfiumLaz.DrawPageToCanvas;
+         GraphicsBackend_DarkenProcedure:= @PdfiumLaz.DarkenBitmap;
+       end;
+    1: begin
+         GraphicsBackend_DrawPageToCanvas:= @PdfiumGraphics32.DrawPageToCanvas;
+         GraphicsBackend_DarkenProcedure:= nil;
+       end;
+    2: begin
+         GraphicsBackend_DrawPageToCanvas:= @PdfiumImage32.DrawPageToCanvas;
+         GraphicsBackend_DarkenProcedure:= nil;
+       end;
+  end;
+end;
+
+procedure TfrmMain.CBThumbnailsPanelChange(Sender: TObject);
+begin
+  case CBThumbnailsPanel.ItemIndex of
+    0:
+      begin
+        FThumbnailsCtrl.Visible:= false;
+      end;
+    1:
+      begin
+        FThumbnailsCtrl.Align:= alBottom;
+        FThumbnailsCtrl.Height:= 200;
+        FThumbnailsCtrl.Color:= clDkGray;
+        FThumbnailsCtrl.Orientation:= tcHorizontal;
+        FThumbnailsCtrl.Visible:= true;
+      end;
+    2:
+      begin
+        FThumbnailsCtrl.Align:= alLeft;
+        FThumbnailsCtrl.Width:= 200;
+        FThumbnailsCtrl.Color:= clDkGray;
+        FThumbnailsCtrl.Orientation:= tcVertical;
+        FThumbnailsCtrl.Visible:= true;
+      end;
   end;
 end;
 

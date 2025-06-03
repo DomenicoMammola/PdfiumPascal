@@ -12,11 +12,22 @@ procedure DrawPageToBitmap(aPage: TPdfPage; aBitmap: TBitmap; aX, aY, aWidth, aH
 
 procedure DrawPageToCanvas(aPage: TPdfPage; aCanvas: TCanvas; aX, aY, aWidth, aHeight: Integer; aRotate: TPdfPageRotation; const aOptions: TPdfPageRenderOptions; aPageBackground: TColor);
 
+// https://forum.lazarus.freepascal.org/index.php/topic,50167.msg365785.html#msg365785
+procedure DarkenBitmap(aBitmap : TBitmap; ALevel: Byte);
+
 implementation
 
 uses
   IntfGraphics, LCLType;
 
+type
+  TBitmapPixel = record
+    B, G, R: UInt8;
+  end;
+
+type
+  PBitmapLine = ^TBitmapLine;
+  TBitmapLine = array [UInt16] of TBitmapPixel;
 
 procedure DrawPageToBitmap(aPage: TPdfPage; aBitmap: TBitmap; aX, aY, aWidth, aHeight: Integer; aRotate: TPdfPageRotation; const aOptions: TPdfPageRenderOptions; aPageBackground: TColor);
 var
@@ -67,6 +78,31 @@ begin
   finally
     tmpBitmap.Free;
   end;
+end;
+
+// https://forum.lazarus.freepascal.org/index.php/topic,50167.msg365785.html#msg365785
+procedure DarkenBitmap(aBitmap: TBitmap; ALevel: Byte);
+var
+  Line: PBitmapLine;
+  LineIndex, PixelIndex: Integer;
+begin
+  ALevel := 255 - ALevel;
+  aBitmap.BeginUpdate();
+
+  for LineIndex := 0 to aBitmap.Height - 1 do
+  begin
+    Line := aBitmap.ScanLine[LineIndex];
+
+    for PixelIndex := 0 to aBitmap.Width - 1 do
+      with Line^[PixelIndex] do
+      begin
+        B := B * ALevel shr 8;
+        G := G * ALevel shr 8;
+        R := R * ALevel shr 8;
+      end;
+  end;
+
+  aBitmap.EndUpdate();
 end;
 
 

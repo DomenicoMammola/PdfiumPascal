@@ -8,33 +8,11 @@ interface
 
 uses
   Classes,  Controls, ExtCtrls, Forms, Graphics, StdCtrls,
+  LMessages,
   Contnrs,
   PdfiumCore, PdfiumPascalViewPageCtrl;
 
 type
-
-  { TPdfPageThumbnailPanel }
-
-(*  TPdfPageThumbnailPanel = class(TCustomPanel)
-  strict private
-    const MARGIN_WIDTH : integer = 20;
-  strict private
-    FPage : TPdfPage;
-    FCachedBitmap : TBitmap;
-    FViewportX, FViewportY : integer;
-    procedure SetPage(AValue: TPdfPage);
-    procedure AdjustGeometry(out aPageWidth, aPageHeight, aViewportX, aViewportY : integer);
-  protected
-    procedure Paint; override;
-  public
-    constructor Create(TheOwner: TComponent); override;
-    destructor Destroy; override;
-
-    property Page : TPdfPage read FPage write SetPage;
-  end;*)
-
-  { TPdfThumbnailsPanel }
-
   { TPdfThumbnailsPanelMouseMoveData }
 
   TPdfThumbnailsPanelMouseMoveData = record
@@ -44,7 +22,11 @@ type
     procedure Clear;
   end;
 
+  TPdfThumbnailsPanelDarkenProcedure = procedure (aBitmap : TBitmap; ALevel: Byte);
   TPdfThumbnailsPanelClickOnThumbnailEvent = procedure (aPageIdx : integer) of object;
+
+  TPdfThumbnailsPanelOptions = (tpoMovePages);
+  TPdfThumbnailsPanelOptionsSet = set of TPdfThumbnailsPanelOptions;
 
   TPdfThumbnailsPanel = class(TCustomControl)
   strict private
@@ -58,6 +40,8 @@ type
     FMarginWidth : integer;
     FMouseMoveData : TPdfThumbnailsPanelMouseMoveData;
     FOnClickOnThumbnail : TPdfThumbnailsPanelClickOnThumbnailEvent;
+    FOptions : TPdfThumbnailsPanelOptionsSet;
+    FMovingPage : boolean;
 
     procedure Rebuild;
     procedure SetDocument(aValue : TPdfDocument);
@@ -65,6 +49,11 @@ type
     procedure CalculateGeometryOfPage(const aDrawingRect : TRect; const aPage : TPdfPage; out aPageWidth, aPageHeight, aViewportX, aViewportY : integer);
     procedure UpdateMouseMoveData(X, Y: integer);
     function GetSquareSize : integer;
+    {$ifdef fpc}
+    procedure CMMouseWheel(var Message: TLMMouseEvent); message LM_MOUSEWHEEL;
+    {$else}
+    procedure WMMouseWheel(var Message: TWMMouseWheel); message WM_MOUSEWHEEL;
+    {$endif}
   protected
     procedure Paint; override;
     procedure MouseUp(Button: TMouseButton; Shift: TShiftState; X, Y: integer); override;
@@ -72,7 +61,6 @@ type
     procedure MouseMove(Shift: TShiftState; X, Y: integer); override;
     procedure Click; override;
     procedure DblClick; override;
-
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
@@ -81,9 +69,12 @@ type
     property Scrollbar : TScrollBar read FScrollbar write FScrollbar;
     property TextColor : TColor read FTextColor write FTextColor;
     property MarginWidth : integer read FMarginWidth write FMarginWidth;
+    property Options : TPdfThumbnailsPanelOptionsSet read FOptions write FOptions;
 
     property OnClickOnThumbnail : TPdfThumbnailsPanelClickOnThumbnailEvent read FOnClickOnThumbnail write FOnClickOnThumbnail;
   end;
+
+  TPdfThumbnailsControlOrientation = (tcHorizontal, tcVertical);
 
   { TPdfThumbnailsControl }
 
@@ -93,7 +84,12 @@ type
     FScrollbar : TScrollBar;
     FPanel : TPdfThumbnailsPanel;
     FViewControl : TPdfPageViewControl;
+    FOrientation : TPdfThumbnailsControlOrientation;
+
+    function GetOptions: TPdfThumbnailsPanelOptionsSet;
     function GetTextColor: TColor;
+    procedure SetOptions(AValue: TPdfThumbnailsPanelOptionsSet);
+    procedure SetOrientation(AValue: TPdfThumbnailsControlOrientation);
     procedure SetTextColor(AValue: TColor);
     procedure SetDocument(AValue: TPdfDocument);
     procedure OnChangeScrollbar(aSender: TObject);
@@ -104,23 +100,12 @@ type
     property TextColor : TColor read GetTextColor write SetTextColor;
     property Document : TPdfDocument read FDocument write SetDocument;
     property ViewControl : TPdfPageViewControl read FViewControl write FViewControl;
+    property Orientation : TPdfThumbnailsControlOrientation read FOrientation write SetOrientation;
+    property Options : TPdfThumbnailsPanelOptionsSet read GetOptions write SetOptions;
   end;
 
-
-  { TPdfThumbsControl }
-(*
-  TPdfThumbsControl = class(TCustomPanel)
-  strict private
-    FDocument: TPdfDocument;
-    FScrollBox : TScrollBox;
-    FPanels : TList;
-    procedure SetDocument(AValue: TPdfDocument);
-  public
-    constructor Create(TheOwner: TComponent); override;
-    destructor Destroy; override;
-
-    property Document: TPdfDocument read FDocument write SetDocument;
-  end;*)
+var
+  GraphicsBackend_DarkenProcedure : TPdfThumbnailsPanelDarkenProcedure;
 
 implementation
 
@@ -134,6 +119,7 @@ type
   TPageThumbData = class
   strict private
     FCachedBitmap : TBitmap;
+    FDarkerCachedBitmap : TBitmap;
     FViewportX : integer;
     FViewportY : integer;
   public
@@ -143,6 +129,7 @@ type
     procedure RebuildCachedBitmap(aPage : TPdfPage; const aWidth, aHeight : integer);
 
     property CachedBitmap : TBitmap read FCachedBitmap;
+    property DarkerCachedBitmap : TBitmap read FDarkerCachedBitmap;
     property viewportX : integer read FViewportX write FViewportX;
     property viewportY : integer read FViewportY write FViewportY;
   end;
@@ -152,6 +139,7 @@ type
 constructor TPageThumbData.Create;
 begin
   FCachedBitmap := nil;
+  FDarkerCachedBitmap := nil;
   FViewportX := 0;
   FViewportY := 0;
 end;
@@ -159,6 +147,7 @@ end;
 destructor TPageThumbData.Destroy;
 begin
   FreeAndNil(FCachedBitmap);
+  FreeAndNil(FDarkerCachedBitmap);
   inherited Destroy;
 end;
 
@@ -169,11 +158,20 @@ begin
   FCachedBitmap.Width:= aWidth;
   FCachedBitmap.Height:= aHeight;
   FCachedBitmap.Canvas.Brush.Style:= bsSolid;
-  //FCachedBitmap.Canvas.Brush.Color:= clWhite;
-  //FCachedBitmap.Canvas.FillRect(0, 0, FCachedBitmap.Width, FCachedBitmap.Height);
+  FreeAndNil(FDarkerCachedBitmap);
+  FDarkerCachedBitmap:= TBitmap.Create;
+  FDarkerCachedBitmap.Width:= aWidth;
+  FDarkerCachedBitmap.Height:= aHeight;
+  FDarkerCachedBitmap.Canvas.Brush.Style:= bsSolid;
+
 
   if Assigned(GraphicsBackend_DrawPageToCanvas) then
+  begin
     GraphicsBackend_DrawPageToCanvas(aPage, FCachedBitmap.Canvas, 0, 0, aWidth, aHeight, prNormal, [], clWhite);
+    FDarkerCachedBitmap.Canvas.Draw(0, 0, FCachedBitmap);
+    if Assigned(GraphicsBackend_DarkenProcedure) then
+      GraphicsBackend_DarkenProcedure(FDarkerCachedBitmap, 30);
+  end;
 end;
 
 { TPdfThumbnailsPanelMouseMoveData }
@@ -183,89 +181,6 @@ begin
   MouseOnPage := false;
   IdxCurrentPage := -1;
 end;
-
-{ TPdfPageThumbnailPanel }
-(*
-procedure TPdfPageThumbnailPanel.SetPage(AValue: TPdfPage);
-begin
-  if FPage=AValue then Exit;
-  FPage:=AValue;
-  FreeAndNil(FCachedBitmap);
-end;
-
-procedure TPdfPageThumbnailPanel.AdjustGeometry (out aPageWidth, aPageHeight, aViewportX, aViewportY : integer);
-var
-  relPage, relViewport : double;
-  ch, cw : integer;
-  scroolbarSize : integer;
-begin
-//  LCLIntf.GetSystemMetrics(SM_CXVSCROLL);
-  scroolbarSize := LCLIntf.GetSystemMetrics(SM_CYHSCROLL);
-  ch := ClientRect.Height - (2 * MARGIN_WIDTH) - scroolbarSize;
-  cw := ClientRect.Width - (2 * MARGIN_WIDTH);
-  relPage:= FPage.Height / FPage.Width;
-  relViewport:= ch / cw;
-
-  if (relViewport > relPage) then
-  begin
-    aPageWidth := cw;
-    aPageHeight := min(ch, round(aPageWidth * FPage.Height / FPage.Width));
-    aViewportX := MARGIN_WIDTH;
-    aViewportY := MARGIN_WIDTH + ((ch - aPageHeight) div 2);
-  end
-  else
-  begin
-    aPageHeight := ch;
-    aPageWidth := min(cw, round(aPageHeight * FPage.Width / FPage.Height));
-    aViewportX := MARGIN_WIDTH + ((cw - aPageWidth) div 2);
-    aViewportY := MARGIN_WIDTH;
-  end;
-end;
-
-procedure TPdfPageThumbnailPanel.Paint;
-var
-  pageWidth, pageHeight : Integer;
-begin
-  inherited Paint;
-  Canvas.Brush.Style:= bsSolid;
-  Canvas.Brush.Color:= Self.Color;
-  Canvas.FillRect(ClientRect);
-
-  if Assigned(FPage) then
-  begin
-    if not Assigned(FCachedBitmap) then
-    begin
-      AdjustGeometry(pageWidth, pageHeight, FViewportX, FViewportY);
-
-      FCachedBitmap:= TBitmap.Create;
-      FCachedBitmap.Width:= pageWidth;
-      FCachedBitmap.Height:= pageHeight;
-      FCachedBitmap.Canvas.Brush.Style:= bsSolid;
-      FCachedBitmap.Canvas.Brush.Color:= clWhite;
-      FCachedBitmap.Canvas.FillRect(0, 0, FCachedBitmap.Width, FCachedBitmap.Height);
-
-      if Assigned(GraphicsBackend_DrawPageToCanvas) then
-        GraphicsBackend_DrawPageToCanvas(FPage, FCachedBitmap.Canvas, 0, 0, pageWidth, pageHeight, prNormal, [], clWhite);
-    end;
-
-    Self.Canvas.Draw(FViewportX, FViewportY, FCachedBitmap);
-  end;
-end;
-
-constructor TPdfPageThumbnailPanel.Create(TheOwner: TComponent);
-begin
-  inherited Create(TheOwner);
-  FPage := nil;
-  FCachedBitmap := nil;
-  Color:= clDkGray;
-end;
-
-destructor TPdfPageThumbnailPanel.Destroy;
-begin
-  FreeAndNil(FCachedBitmap);
-  inherited Destroy;
-end;
-*)
 
 { TPdfThumbnailsPanel }
 
@@ -294,6 +209,9 @@ var
   nbp : String;
   sz : TSize;
 begin
+  if (not Assigned(FScrollbar)) or (not Assigned(FDocument)) then
+    exit;
+
   Canvas.Brush.Color:= Self.Color;
   nbp := IntToStr(aPageIndex + 1);
 
@@ -306,11 +224,14 @@ begin
     curData.viewPortY:= vy;
   end;
 
-  Canvas.Draw(curData.viewportX + aDrawingRect.Left, curData.viewportY, curData.CachedBitmap);
+  if FMouseMoveData.MouseOnPage and (FMouseMoveData.IdxCurrentPage = aPageIndex) then
+    Canvas.Draw(curData.viewportX + aDrawingRect.Left, curData.viewportY + aDrawingRect.Top, curData.CachedBitmap)
+  else
+    Canvas.Draw(curData.viewportX + aDrawingRect.Left, curData.viewportY + aDrawingRect.Top, curData.DarkerCachedBitmap); // curData.CachedBitmap);
   Canvas.Font.Color := Self.TextColor;
   Canvas.Font.Size := 10;
   sz := Canvas.TextExtent(nbp);
-  Canvas.TextOut(aDrawingRect.Left + ((aDrawingRect.Width - sz.Width) div 2), aDrawingRect.Bottom - FMarginWidth , nbp); //aDrawingRect.Bottom - ((aDrawingRect.Bottom - curData.viewportY  - sz.Height) div 2) + sz.Height , nbp);
+  Canvas.TextOut(aDrawingRect.Left + ((aDrawingRect.Width - sz.Width) div 2), aDrawingRect.Bottom - FMarginWidth , nbp);
 end;
 
 procedure TPdfThumbnailsPanel.CalculateGeometryOfPage(const aDrawingRect: TRect; const aPage : TPdfPage; out aPageWidth, aPageHeight, aViewportX, aViewportY: integer);
@@ -343,34 +264,63 @@ procedure TPdfThumbnailsPanel.UpdateMouseMoveData(X, Y: integer);
 var
   idx, i : integer;
   curData : TPageThumbData;
-  l, t : integer;
+  l, t, lastIdx : integer;
 begin
+  lastIdx := FMouseMoveData.IdxCurrentPage;
   FMouseMoveData.Clear;
 
   if not PtInRect(ClientRect, Classes.Point(X, Y)) then
     exit;
 
-  if not Assigned(FDocument) then
+  if (not Assigned(FDocument)) or (not Assigned(FScrollbar)) then
     exit;
 
-  idx := (X div GetSquareSize) + FScrollbar.Position - 1;
+  if FScrollbar.Kind = sbHorizontal then
+    idx := (X div GetSquareSize) + FScrollbar.Position - 1
+  else
+    idx := (Y div GetSquareSize) + FScrollbar.Position - 1;
 
   if (idx >= FDocument.PageCount) then
     exit;
 
   curData := FPages.Items[idx] as TPageThumbData;
-  l := ClientRect.Left + ((idx - FScrollbar.Position + 1) * GetSquareSize) + curData.viewportX;
-  t := ClientRect.Top + curData.viewportY;
+  if FScrollbar.Kind = sbHorizontal then
+  begin
+    l := ClientRect.Left + ((idx - FScrollbar.Position + 1) * GetSquareSize) + curData.viewportX;
+    t := ClientRect.Top + curData.viewportY;
+  end
+  else
+  begin
+    l := ClientRect.Left + curData.viewportX;
+    t := ClientRect.Top + ((idx - FScrollbar.Position + 1) * GetSquareSize) + curData.viewportY;
+  end;
   if PtInRect(Classes.Rect(l, t, l + curData.CachedBitmap.Width, t + curData.CachedBitmap.Height), Classes.Point(X, Y)) then
   begin
     FMouseMoveData.MouseOnPage := true;
     FMouseMoveData.IdxCurrentPage := idx;
   end;
+  if lastIdx <> FMouseMoveData.IdxCurrentPage then
+    Invalidate;
 end;
 
 function TPdfThumbnailsPanel.GetSquareSize: integer;
 begin
-  Result := Self.Height
+  if FScrollbar.Kind = sbHorizontal then
+    Result := Self.Height
+  else
+    Result := Self.Width;
+end;
+
+{$ifdef fpc}
+procedure TPdfThumbnailsPanel.CMMouseWheel(var Message: TLMMouseEvent);
+{$else}
+procedure TPdfThumbnailsPanel.WMMouseWheel(var Message: TWMMouseWheel); //message WM_MOUSEWHEEL;
+{$endif}
+begin
+  if Message.WheelDelta < 0 then
+    FScrollbar.Position := min(FScrollbar.Max, FScrollbar.Position + 1)
+  else
+    FScrollbar.Position := max(FScrollbar.Min, FScrollbar.Position - 1);
 end;
 
 procedure TPdfThumbnailsPanel.Paint;
@@ -393,15 +343,26 @@ begin
 
     for i := FScrollbar.Position to FDocument.PageCount do
     begin
-      curDrawingRect.Left := 0 + (i-FScrollbar.Position) * squareSize;
-      curDrawingRect.Right := curDrawingRect.Left + squareSize;
-      curDrawingRect.Top := 0;
-      curDrawingRect.Bottom := squareSize;
-      if curDrawingRect.Left > Self.ClientRect.Width then
-        break;
+      if FScrollbar.Kind = sbHorizontal then
+      begin
+        curDrawingRect.Left := 0 + (i-FScrollbar.Position) * squareSize;
+        curDrawingRect.Right := curDrawingRect.Left + squareSize;
+        curDrawingRect.Top := 0;
+        curDrawingRect.Bottom := squareSize;
+        if curDrawingRect.Left > Self.ClientRect.Width then
+          break;
+      end
+      else
+      begin
+        curDrawingRect.Top := (i-FScrollbar.Position) * squareSize;
+        curDrawingRect.Right := squareSize;
+        curDrawingRect.Left := 0;
+        curDrawingRect.Bottom := curDrawingRect.Top + squareSize;
+        if curDrawingRect.Top > Self.ClientRect.Height then
+          break;
+      end;
       PaintPage(FDocument.Pages[i - 1], i - 1, curDrawingRect);
     end;
-
   finally
     Canvas.Unlock;
   end;
@@ -409,6 +370,7 @@ end;
 
 procedure TPdfThumbnailsPanel.MouseUp(Button: TMouseButton; Shift: TShiftState; X, Y: integer);
 begin
+  FMovingPage := false;
   inherited MouseUp(Button, Shift, X, Y);
 end;
 
@@ -417,6 +379,8 @@ begin
   if (Button = mbLeft) then
   begin
     UpdateMouseMoveData(X, Y);
+    if FMouseMoveData.MouseOnPage and (tpoMovePages in FOptions) then
+      FMovingPage := true;
   end;
 
   inherited MouseDown(Button, Shift, X, Y);
@@ -425,6 +389,16 @@ end;
 procedure TPdfThumbnailsPanel.MouseMove(Shift: TShiftState; X, Y: integer);
 begin
   UpdateMouseMoveData(X, Y);
+  if FMovingPage then
+  begin
+  end
+  else
+  begin
+    if (tpoMovePages in FOptions) and (FMouseMoveData.MouseOnPage) then
+      Self.Cursor:= crHandPoint
+    else
+      Cursor := crDefault;
+  end;
   inherited MouseMove(Shift, X, Y);
 end;
 
@@ -451,6 +425,8 @@ begin
   FTextColor := clWhite;
   FMarginWidth := 20;
   FOnClickOnThumbnail := nil;
+  FOptions := [];
+  FMovingPage:= false;
 end;
 
 destructor TPdfThumbnailsPanel.Destroy;
@@ -474,6 +450,34 @@ begin
   Result := FPanel.TextColor;
 end;
 
+function TPdfThumbnailsControl.GetOptions: TPdfThumbnailsPanelOptionsSet;
+begin
+  Result := FPanel.Options;
+end;
+
+procedure TPdfThumbnailsControl.SetOptions(AValue: TPdfThumbnailsPanelOptionsSet);
+begin
+  FPanel.Options := AValue;
+end;
+
+procedure TPdfThumbnailsControl.SetOrientation(AValue: TPdfThumbnailsControlOrientation);
+begin
+  if FOrientation=AValue then Exit;
+  FOrientation:=AValue;
+  if FOrientation = tcHorizontal then
+  begin
+    FScrollbar.Kind:= sbHorizontal;
+    FScrollbar.Align := alBottom;
+    FPanel.Align := alClient;
+  end
+  else
+  begin
+    FScrollbar.Kind:= sbVertical;
+    FScrollbar.Align := alRight;
+    FPanel.Align := alClient;
+  end;
+end;
+
 procedure TPdfThumbnailsControl.OnChangeScrollbar(aSender: TObject);
 begin
   FPanel.Invalidate;
@@ -493,6 +497,7 @@ end;
 constructor TPdfThumbnailsControl.Create(TheOwner: TComponent);
 begin
   inherited Create(TheOwner);
+  FOrientation:= tcHorizontal;
   FScrollbar := TScrollBar.Create(Self);
   FScrollbar.Parent := Self;
   FScrollbar.Align := alBottom;
@@ -509,58 +514,5 @@ destructor TPdfThumbnailsControl.Destroy;
 begin
   inherited Destroy;
 end;
-
-{ TPdfThumbsControl }
-(*
-procedure TPdfThumbsControl.SetDocument(AValue: TPdfDocument);
-var
-  i : integer;
-  curPanel : TPdfPageThumbnailPanel;
-begin
-
-  FScrollBox.Visible:= false;
-  try
-    for i := 0 to FPanels.Count - 1 do
-      TPdfPageThumbnailPanel(FPanels.Items[i]).Free;
-    FPanels.Clear;
-
-    FDocument:=AValue;
-    for i := FDocument.PageCount - 1 downto 0 do
-    begin
-      curPanel := TPdfPageThumbnailPanel.Create(FScrollBox);
-      curPanel.Parent := FScrollBox;
-      curPanel.Width:= FScrollBox.HorzScrollBar.ClientSizeWithoutBar;
-      curPanel.Height:= FScrollBox.HorzScrollBar.ClientSizeWithoutBar;
-      curPanel.Align:= alLeft;
-      curPanel.Page := FDocument.Pages[i];
-      FPanels.Add(curPanel);
-    end;
-  finally
-    FScrollBox.Visible:= true;
-  end;
-
-end;
-
-
-constructor TPdfThumbsControl.Create(TheOwner: TComponent);
-begin
-  inherited Create(TheOwner);
-  FPanels := TList.Create;
-  Self.BorderStyle := bsNone;
-  Self.BevelInner := bvNone;
-  Self.BevelOuter := bvNone;
-
-  FScrollBox := TScrollBox.Create(Self);
-  FScrollBox.Parent := Self;
-  FScrollBox.Align := alClient;
-  FScrollBox.VertScrollBar.Visible := false;
-end;
-
-destructor TPdfThumbsControl.Destroy;
-begin
-  FPanels.Free;
-  inherited Destroy;
-end;
-*)
 
 end.

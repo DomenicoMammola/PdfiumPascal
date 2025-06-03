@@ -25,12 +25,12 @@ object frmMain: TfrmMain
   end
   object pnlButtons: TPanel
     Left = 0
-    Height = 72
+    Height = 64
     Top = 0
     Width = 1014
     Align = alTop
     BevelOuter = bvNone
-    ClientHeight = 72
+    ClientHeight = 64
     ClientWidth = 1014
     ParentBackground = False
     TabOrder = 1
@@ -177,6 +177,23 @@ object frmMain: TfrmMain
       TabOrder = 14
       Text = 'LCL'
       OnChange = CBGraphicBackendChange
+    end
+    object CBThumbnailsPanel: TComboBox
+      Left = 528
+      Height = 21
+      Top = 33
+      Width = 160
+      ItemHeight = 13
+      ItemIndex = 0
+      Items.Strings = (
+        'No thumbnails'
+        'Bottom thumbnails'
+        'Left thumbnails'
+      )
+      Style = csDropDownList
+      TabOrder = 15
+      Text = 'No thumbnails'
+      OnChange = CBThumbnailsPanelChange
     end
   end
   object PrintDialog1: TPrintDialog
