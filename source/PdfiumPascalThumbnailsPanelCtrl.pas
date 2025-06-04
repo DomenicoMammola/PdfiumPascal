@@ -18,6 +18,8 @@ type
   TPdfThumbnailsPanelMouseMoveData = record
     MouseOnPage : boolean;
     IdxCurrentPage : integer;
+    MouseOnSeparator : boolean;
+    IdxSeparator : integer;
 
     procedure Clear;
   end;
@@ -31,6 +33,7 @@ type
   TPdfThumbnailsPanel = class(TCustomControl)
   strict private
     const TEXT_HEIGHT : integer = 10;
+    const DROP_AREA_SIZE : integer = 6;
   strict private
     FCurrentPageIdx : integer;
     FDocument : TPdfDocument;
@@ -180,6 +183,8 @@ procedure TPdfThumbnailsPanelMouseMoveData.Clear;
 begin
   MouseOnPage := false;
   IdxCurrentPage := -1;
+  MouseOnSeparator := false;
+  IdxSeparator := -1;
 end;
 
 { TPdfThumbnailsPanel }
@@ -208,6 +213,7 @@ var
   pw, ph, vx, vy : integer;
   nbp : String;
   sz : TSize;
+  lp, tp : integer;
 begin
   if (not Assigned(FScrollbar)) or (not Assigned(FDocument)) then
     exit;
@@ -215,23 +221,34 @@ begin
   Canvas.Brush.Color:= Self.Color;
   nbp := IntToStr(aPageIndex + 1);
 
-  curData := FPages.Items[aPageIndex] as TPageThumbData;
-  if not Assigned(curData.CachedBitmap) then
+  if Assigned(aPage) then
   begin
-    CalculateGeometryOfPage(aDrawingRect, aPage, pw, ph, vx, vy);
-    curData.RebuildCachedBitmap(aPage, pw, ph);
-    curData.viewPortX:= vx;
-    curData.viewPortY:= vy;
+    curData := FPages.Items[aPageIndex] as TPageThumbData;
+    if not Assigned(curData.CachedBitmap) then
+    begin
+      CalculateGeometryOfPage(aDrawingRect, aPage, pw, ph, vx, vy);
+      curData.RebuildCachedBitmap(aPage, pw, ph);
+      curData.viewPortX:= vx;
+      curData.viewPortY:= vy;
+    end;
+
+    if FMouseMoveData.MouseOnPage and (FMouseMoveData.IdxCurrentPage = aPageIndex) then
+      Canvas.Draw(curData.viewportX + aDrawingRect.Left, curData.viewportY + aDrawingRect.Top, curData.CachedBitmap)
+    else
+      Canvas.Draw(curData.viewportX + aDrawingRect.Left, curData.viewportY + aDrawingRect.Top, curData.DarkerCachedBitmap); // curData.CachedBitmap);
+    Canvas.Font.Color := Self.TextColor;
+    Canvas.Font.Size := 10;
+    sz := Canvas.TextExtent(nbp);
+    Canvas.TextOut(aDrawingRect.Left + ((aDrawingRect.Width - sz.Width) div 2), aDrawingRect.Bottom - FMarginWidth , nbp);
   end;
 
-  if FMouseMoveData.MouseOnPage and (FMouseMoveData.IdxCurrentPage = aPageIndex) then
-    Canvas.Draw(curData.viewportX + aDrawingRect.Left, curData.viewportY + aDrawingRect.Top, curData.CachedBitmap)
-  else
-    Canvas.Draw(curData.viewportX + aDrawingRect.Left, curData.viewportY + aDrawingRect.Top, curData.DarkerCachedBitmap); // curData.CachedBitmap);
-  Canvas.Font.Color := Self.TextColor;
-  Canvas.Font.Size := 10;
-  sz := Canvas.TextExtent(nbp);
-  Canvas.TextOut(aDrawingRect.Left + ((aDrawingRect.Width - sz.Width) div 2), aDrawingRect.Bottom - FMarginWidth , nbp);
+  if FMovingPage and FMouseMoveData.MouseOnSeparator and (FMouseMoveData.IdxSeparator = aPageIndex) then
+  begin
+    Canvas.Brush.Color:= clGreen;
+    Canvas.Pen.Color:= clGreen;
+    lp := Max(0, aDrawingRect.Left - (DROP_AREA_SIZE div 2));
+    Canvas.FillRect(lp, aDrawingRect.Top, lp + DROP_AREA_SIZE, aDrawingRect.Bottom);
+  end;
 end;
 
 procedure TPdfThumbnailsPanel.CalculateGeometryOfPage(const aDrawingRect: TRect; const aPage : TPdfPage; out aPageWidth, aPageHeight, aViewportX, aViewportY: integer);
@@ -264,9 +281,12 @@ procedure TPdfThumbnailsPanel.UpdateMouseMoveData(X, Y: integer);
 var
   idx, i : integer;
   curData : TPageThumbData;
-  l, t, lastIdx : integer;
+  lpage, tpage, lsquare, tsquare, lastIdx, lastSeparator : integer;
+  rectPrev, rectNext : TRect;
+  pt : TPoint;
 begin
   lastIdx := FMouseMoveData.IdxCurrentPage;
+  lastSeparator := FMouseMoveData.IdxSeparator;
   FMouseMoveData.Clear;
 
   if not PtInRect(ClientRect, Classes.Point(X, Y)) then
@@ -286,20 +306,40 @@ begin
   curData := FPages.Items[idx] as TPageThumbData;
   if FScrollbar.Kind = sbHorizontal then
   begin
-    l := ClientRect.Left + ((idx - FScrollbar.Position + 1) * GetSquareSize) + curData.viewportX;
-    t := ClientRect.Top + curData.viewportY;
+    lsquare := ClientRect.Left + ((idx - FScrollbar.Position + 1) * GetSquareSize);
+    tsquare := ClientRect.Top;
+    lpage := lsquare + curData.viewportX;
+    tpage := tsquare + curData.viewportY;
+    rectPrev := Rect(lsquare, tsquare, lsquare + DROP_AREA_SIZE, tsquare + GetSquareSize);
+    rectNext := Rect(lsquare + GetSquareSize - DROP_AREA_SIZE, tsquare, lsquare + GetSquareSize, rectPrev.Bottom);
   end
   else
   begin
-    l := ClientRect.Left + curData.viewportX;
-    t := ClientRect.Top + ((idx - FScrollbar.Position + 1) * GetSquareSize) + curData.viewportY;
+    lsquare := ClientRect.Left;
+    tsquare := ClientRect.Top + ((idx - FScrollbar.Position + 1) * GetSquareSize);
+    lpage := lsquare + curData.viewportX;
+    tpage := tsquare + curData.viewportY;
+    rectPrev := Rect(lsquare, tsquare, lsquare + GetSquareSize, tsquare + DROP_AREA_SIZE);
+    rectNext := Rect(lsquare, tsquare + GetSquareSize - DROP_AREA_SIZE, rectPrev.Right, tsquare + GetSquareSize);
   end;
-  if PtInRect(Classes.Rect(l, t, l + curData.CachedBitmap.Width, t + curData.CachedBitmap.Height), Classes.Point(X, Y)) then
+  pt := Classes.Point(X, Y);
+  if PtInRect(Classes.Rect(lpage, tpage, lpage + curData.CachedBitmap.Width, tpage + curData.CachedBitmap.Height), pt) then
   begin
     FMouseMoveData.MouseOnPage := true;
     FMouseMoveData.IdxCurrentPage := idx;
+  end
+  else if PtInRect(rectPrev, pt) then
+  begin
+    FMouseMoveData.MouseOnSeparator := true;
+    FMouseMoveData.IdxSeparator := idx;
+  end
+  else if PtInRect(rectNext, pt) then
+  begin
+    FMouseMoveData.MouseOnSeparator := true;
+    FMouseMoveData.IdxSeparator := idx + 1;
   end;
-  if lastIdx <> FMouseMoveData.IdxCurrentPage then
+
+  if (lastIdx <> FMouseMoveData.IdxCurrentPage) or (lastSeparator <> FMouseMoveData.IdxSeparator) then
     Invalidate;
 end;
 
@@ -350,7 +390,7 @@ begin
         curDrawingRect.Top := 0;
         curDrawingRect.Bottom := squareSize;
         if curDrawingRect.Left > Self.ClientRect.Width then
-          break;
+          exit;
       end
       else
       begin
@@ -359,10 +399,30 @@ begin
         curDrawingRect.Left := 0;
         curDrawingRect.Bottom := curDrawingRect.Top + squareSize;
         if curDrawingRect.Top > Self.ClientRect.Height then
-          break;
+          exit;
       end;
       PaintPage(FDocument.Pages[i - 1], i - 1, curDrawingRect);
     end;
+
+    if FScrollbar.Kind = sbHorizontal then
+    begin
+      curDrawingRect.Left := 0 + (FDocument.PageCount + 1 -FScrollbar.Position) * squareSize;
+      curDrawingRect.Right := curDrawingRect.Left + squareSize;
+      curDrawingRect.Top := 0;
+      curDrawingRect.Bottom := squareSize;
+      if curDrawingRect.Left > Self.ClientRect.Width then
+        exit;
+    end
+    else
+    begin
+      curDrawingRect.Top := (FDocument.PageCount + 1 -FScrollbar.Position) * squareSize;
+      curDrawingRect.Right := squareSize;
+      curDrawingRect.Left := 0;
+      curDrawingRect.Bottom := curDrawingRect.Top + squareSize;
+      if curDrawingRect.Top > Self.ClientRect.Height then
+        exit;
+    end;
+    PaintPage(nil, FDocument.PageCount, curDrawingRect);
   finally
     Canvas.Unlock;
   end;
@@ -370,7 +430,12 @@ end;
 
 procedure TPdfThumbnailsPanel.MouseUp(Button: TMouseButton; Shift: TShiftState; X, Y: integer);
 begin
-  FMovingPage := false;
+  if FMovingPage then
+  begin
+    FMovingPage:= false;
+    Cursor := crDefault;
+    Invalidate;
+  end;
   inherited MouseUp(Button, Shift, X, Y);
 end;
 
@@ -390,15 +455,9 @@ procedure TPdfThumbnailsPanel.MouseMove(Shift: TShiftState; X, Y: integer);
 begin
   UpdateMouseMoveData(X, Y);
   if FMovingPage then
-  begin
-  end
+    Self.Cursor:= crDrag
   else
-  begin
-    if (tpoMovePages in FOptions) and (FMouseMoveData.MouseOnPage) then
-      Self.Cursor:= crHandPoint
-    else
-      Cursor := crDefault;
-  end;
+    Cursor := crDefault;
   inherited MouseMove(Shift, X, Y);
 end;
 
