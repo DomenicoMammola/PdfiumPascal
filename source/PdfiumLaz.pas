@@ -18,11 +18,11 @@ procedure DarkenBitmap(aBitmap : TBitmap; ALevel: Byte);
 implementation
 
 uses
-  IntfGraphics, LCLType;
+  IntfGraphics, LCLType(*, GraphUtil*);
 
 type
   TBitmapPixel = record
-    B, G, R: UInt8;
+    B, G, R{$IFDEF UNIX}, A {$ENDIF}: UInt8;
   end;
 
 type
