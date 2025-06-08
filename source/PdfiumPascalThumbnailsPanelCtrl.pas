@@ -40,6 +40,7 @@ type
     FScrollbar : TScrollBar;
     FPages : TObjectList;
     FTextColor : TColor;
+    FSeparatorLineColor : TColor;
     FMarginWidth : integer;
     FMouseMoveData : TPdfThumbnailsPanelMouseMoveData;
     FOnClickOnThumbnail : TPdfThumbnailsPanelClickOnThumbnailEvent;
@@ -71,6 +72,7 @@ type
     property Document : TPdfDocument read FDocument write SetDocument;
     property Scrollbar : TScrollBar read FScrollbar write FScrollbar;
     property TextColor : TColor read FTextColor write FTextColor;
+    property SeparatorLineColor : TColor read FSeparatorLineColor write FSeparatorLineColor;
     property MarginWidth : integer read FMarginWidth write FMarginWidth;
     property Options : TPdfThumbnailsPanelOptionsSet read FOptions write FOptions;
 
@@ -244,10 +246,18 @@ begin
 
   if FMovingPage and FMouseMoveData.MouseOnSeparator and (FMouseMoveData.IdxSeparator = aPageIndex) then
   begin
-    Canvas.Brush.Color:= clGreen;
-    Canvas.Pen.Color:= clGreen;
-    lp := Max(0, aDrawingRect.Left - (DROP_AREA_SIZE div 2));
-    Canvas.FillRect(lp, aDrawingRect.Top, lp + DROP_AREA_SIZE, aDrawingRect.Bottom);
+    Canvas.Brush.Color:= FSeparatorLineColor;
+    Canvas.Pen.Color:= FSeparatorLineColor;
+    if FScrollbar.Kind = sbHorizontal then
+    begin
+      lp := Max(0, aDrawingRect.Left - (DROP_AREA_SIZE div 2));
+      Canvas.FillRect(lp, aDrawingRect.Top, lp + DROP_AREA_SIZE, aDrawingRect.Bottom);
+    end
+    else
+    begin
+      lp := Max(0, aDrawingRect.Top - (DROP_AREA_SIZE div 2));
+      Canvas.FillRect(aDrawingRect.Left, lp, aDrawingRect.Right, lp + DROP_AREA_SIZE);
+    end;
   end;
 end;
 
@@ -310,8 +320,8 @@ begin
     tsquare := ClientRect.Top;
     lpage := lsquare + curData.viewportX;
     tpage := tsquare + curData.viewportY;
-    rectPrev := Rect(lsquare, tsquare, lsquare + DROP_AREA_SIZE, tsquare + GetSquareSize);
-    rectNext := Rect(lsquare + GetSquareSize - DROP_AREA_SIZE, tsquare, lsquare + GetSquareSize, rectPrev.Bottom);
+    rectPrev := Rect(lsquare, tsquare, lsquare + (DROP_AREA_SIZE * 2), tsquare + GetSquareSize);
+    rectNext := Rect(lsquare + GetSquareSize - (DROP_AREA_SIZE * 2), tsquare, lsquare + GetSquareSize, rectPrev.Bottom);
   end
   else
   begin
@@ -319,8 +329,8 @@ begin
     tsquare := ClientRect.Top + ((idx - FScrollbar.Position + 1) * GetSquareSize);
     lpage := lsquare + curData.viewportX;
     tpage := tsquare + curData.viewportY;
-    rectPrev := Rect(lsquare, tsquare, lsquare + GetSquareSize, tsquare + DROP_AREA_SIZE);
-    rectNext := Rect(lsquare, tsquare + GetSquareSize - DROP_AREA_SIZE, rectPrev.Right, tsquare + GetSquareSize);
+    rectPrev := Rect(lsquare, tsquare, lsquare + GetSquareSize, tsquare + (DROP_AREA_SIZE * 2));
+    rectNext := Rect(lsquare, tsquare + GetSquareSize - (DROP_AREA_SIZE * 2), rectPrev.Right, tsquare + GetSquareSize);
   end;
   pt := Classes.Point(X, Y);
   if PtInRect(Classes.Rect(lpage, tpage, lpage + curData.CachedBitmap.Width, tpage + curData.CachedBitmap.Height), pt) then
@@ -480,8 +490,9 @@ begin
   FDocument := nil;
   FScrollbar := nil;
   FPages := TObjectList.Create(true);
-  Color := clDkGray;
+  Color := $3d3c3b;
   FTextColor := clWhite;
+  FSeparatorLineColor := $89633d;
   FMarginWidth := 20;
   FOnClickOnThumbnail := nil;
   FOptions := [];
