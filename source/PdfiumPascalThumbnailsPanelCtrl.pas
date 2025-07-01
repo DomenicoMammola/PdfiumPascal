@@ -10,7 +10,7 @@ uses
   Classes,  Controls, ExtCtrls, Forms, Graphics, StdCtrls,
   LMessages,
   Contnrs,
-  PdfiumCore, PdfiumPascalViewPageCtrl;
+  PdfiumCore, PdfiumPascalViewPageCtrl, PdfiumPascalEvents;
 
 type
   { TPdfThumbnailsPanelMouseMoveData }
@@ -65,9 +65,8 @@ type
     procedure MouseMove(Shift: TShiftState; X, Y: integer); override;
     procedure Click; override;
     procedure DblClick; override;
-  public
-    constructor Create(AOwner: TComponent); override;
-    destructor Destroy; override;
+  protected
+    property OnClickOnThumbnail : TPdfThumbnailsPanelClickOnThumbnailEvent read FOnClickOnThumbnail write FOnClickOnThumbnail;
 
     property Document : TPdfDocument read FDocument write SetDocument;
     property Scrollbar : TScrollBar read FScrollbar write FScrollbar;
@@ -75,11 +74,24 @@ type
     property SeparatorLineColor : TColor read FSeparatorLineColor write FSeparatorLineColor;
     property MarginWidth : integer read FMarginWidth write FMarginWidth;
     property Options : TPdfThumbnailsPanelOptionsSet read FOptions write FOptions;
-
-    property OnClickOnThumbnail : TPdfThumbnailsPanelClickOnThumbnailEvent read FOnClickOnThumbnail write FOnClickOnThumbnail;
+  public
+    constructor Create(AOwner: TComponent); override;
+    destructor Destroy; override;
   end;
 
   TPdfThumbnailsControlOrientation = (tcHorizontal, tcVertical);
+
+  TPdfThumbnailsControl = class;
+
+  { TPageViewControlEventsCallbacks }
+
+  TPageViewControlEventsCallbacks = class (TPdfPageViewControlEventsSubscription)
+  protected
+    FControl: TPdfThumbnailsControl;
+  public
+    procedure ChangePage(const aPageIndex : integer); override;
+  end;
+
 
   { TPdfThumbnailsControl }
 
@@ -90,6 +102,8 @@ type
     FPanel : TPdfThumbnailsPanel;
     FViewControl : TPdfPageViewControl;
     FOrientation : TPdfThumbnailsControlOrientation;
+    FViewControlCallbacks : TPageViewControlEventsCallbacks;
+    FPageIndex : integer;
 
     function GetOptions: TPdfThumbnailsPanelOptionsSet;
     function GetTextColor: TColor;
@@ -99,12 +113,15 @@ type
     procedure SetDocument(AValue: TPdfDocument);
     procedure OnChangeScrollbar(aSender: TObject);
     procedure OnClickOnThumbnail(aPageIdx : integer);
+    procedure SetViewControl(AValue: TPdfPageViewControl);
+  protected
+    procedure MoveToPage(const aPageIndex : integer);
   public
     constructor Create(TheOwner: TComponent); override;
     destructor Destroy; override;
     property TextColor : TColor read GetTextColor write SetTextColor;
     property Document : TPdfDocument read FDocument write SetDocument;
-    property ViewControl : TPdfPageViewControl read FViewControl write FViewControl;
+    property ViewControl : TPdfPageViewControl read FViewControl write SetViewControl;
     property Orientation : TPdfThumbnailsControlOrientation read FOrientation write SetOrientation;
     property Options : TPdfThumbnailsPanelOptionsSet read GetOptions write SetOptions;
   end;
@@ -138,6 +155,8 @@ type
     property viewportX : integer read FViewportX write FViewportX;
     property viewportY : integer read FViewportY write FViewportY;
   end;
+
+
 
 { TPageThumbData }
 
@@ -241,7 +260,7 @@ begin
     Canvas.Font.Color := Self.TextColor;
     Canvas.Font.Size := 10;
     sz := Canvas.TextExtent(nbp);
-    Canvas.TextOut(aDrawingRect.Left + ((aDrawingRect.Width - sz.Width) div 2), aDrawingRect.Bottom - FMarginWidth , nbp);
+    Canvas.TextOut(aDrawingRect.Left + ((aDrawingRect.Width - sz.Width) div 2), curData.viewportY + aDrawingRect.Top + curData.CachedBitmap.Height + (FMarginWidth div 2) , nbp);
   end;
 
   if FMovingPage and FMouseMoveData.MouseOnSeparator and (FMouseMoveData.IdxSeparator = aPageIndex) then
@@ -555,8 +574,27 @@ end;
 
 procedure TPdfThumbnailsControl.OnClickOnThumbnail(aPageIdx: integer);
 begin
+  FPageIndex := aPageIdx;
   if Assigned(FViewControl) then
     FViewControl.GotoPage(aPageIdx);
+end;
+
+procedure TPdfThumbnailsControl.SetViewControl(AValue: TPdfPageViewControl);
+begin
+  if FViewControl=AValue then Exit;
+  FViewControl:=AValue;
+  FreeAndNil(FViewControlCallbacks);
+  FViewControlCallbacks := FViewControl.SubscribeToEvents(TPageViewControlEventsCallbacks) as TPageViewControlEventsCallbacks;
+  FViewControlCallbacks.FControl := Self;
+end;
+
+procedure TPdfThumbnailsControl.MoveToPage(const aPageIndex: integer);
+begin
+  if FPageIndex <> aPageIndex then
+  begin
+    FPageIndex:= aPageIndex;
+    FScrollbar.Position:= FPageIndex;
+  end;
 end;
 
 procedure TPdfThumbnailsControl.SetTextColor(AValue: TColor);
@@ -578,11 +616,20 @@ begin
   FPanel.Scrollbar := FScrollbar;
   FPanel.OnClickOnThumbnail := OnClickOnThumbnail;
   FScrollbar.OnChange := Self.OnChangeScrollbar;
+  FViewControlCallbacks := nil;
+  FPageIndex := -1;
 end;
 
 destructor TPdfThumbnailsControl.Destroy;
 begin
   inherited Destroy;
+end;
+
+{ TPageViewControlEventsCallbacks }
+
+procedure TPageViewControlEventsCallbacks.ChangePage(const aPageIndex: integer);
+begin
+  FControl.MoveToPage(aPageIndex);
 end;
 
 end.

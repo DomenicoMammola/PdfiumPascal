@@ -10,8 +10,8 @@ object frmMain: TfrmMain
   Font.Color = clWindowText
   Font.Height = -11
   Font.Name = 'Tahoma'
+  LCLVersion = '4.0.0.4'
   OnCreate = FormCreate
-  LCLVersion = '3.8.0.0'
   object ListViewAttachments: TListView
     Left = 0
     Height = 47
@@ -122,9 +122,9 @@ object frmMain: TfrmMain
       Width = 49
       MaxValue = 10000
       MinValue = 1
-      OnChange = edtZoomChange
       TabOrder = 8
       Value = 100
+      OnChange = edtZoomChange
     end
     object Edit1: TEdit
       Left = 152

@@ -9,7 +9,7 @@ interface
 uses
   Classes, Controls, StdCtrls, Contnrs, Graphics,
   LMessages,
-  PdfiumCore;
+  PdfiumCore, PdfiumPascalEvents;
 
 const
   cPdfControlDefaultDrawOptions = [proAnnotations];
@@ -24,6 +24,7 @@ type
   );
 
   TPdfControlDrawPageToCanvasProcedure = procedure (aPage: TPdfPage; aCanvas: TCanvas; aX, aY, aWidth, aHeight: Integer; aRotate: TPdfPageRotation; const aOptions: TPdfPageRenderOptions; aPageBackground: TColor);
+  TPdfControlOnChangePage = procedure (const aPageIndex : integer) of object;
 
   TPdfControlPdfRectShell = class
   public
@@ -47,6 +48,8 @@ type
 
   TPdfControlWebLinkClickEvent = procedure(Sender: TObject; Url: string) of object;
 
+  TPdfControlEventKind = (pcePageChanged);
+
   { TPdfPageViewControl }
 
   TPdfPageViewControl = class(TCustomControl)
@@ -67,6 +70,7 @@ type
     FAllowFormEvents : Boolean;
     FDrawOptions : TPdfPageRenderOptions;
     FHighLightTextColor : TColor;
+    FEventsSubscriptions: TObjectList;
 
     FOnWebLinkClick : TPdfControlWebLinkClickEvent;
 
@@ -97,6 +101,7 @@ type
 //    procedure UpdateFocus(AFocused: Boolean);
     function PageX : integer;
     function PageY : integer;
+    procedure NotifySubscribers(aEventKind: TPdfControlEventKind);
   protected
     procedure Paint; override;
     procedure MouseMove(Shift: TShiftState; X,Y: Integer); override;
@@ -112,6 +117,7 @@ type
     procedure HightlightText(const SearchText: string; MatchCase, MatchWholeWord: Boolean);
     // explanation here: https://forum.lazarus.freepascal.org/index.php?topic=38041.0
     procedure SetBounds(aLeft, aTop, aWidth, aHeight: integer); override;
+    function SubscribeToEvents(aSubscriberClass: TPdfPageViewControlEventsSubscriptionClass) : TPdfPageViewControlEventsSubscription;
   public
     property Document: TPdfDocument read FDocument;
     property ScaleMode: TPdfControlScaleMode read FScaleMode write SetScaleMode default smFitAuto;
@@ -445,7 +451,7 @@ end;
 
 procedure TPdfPageViewControl.CMMouseWheel(var Message: TLMMouseEvent);
 var
-  direction : integer;
+  direction, p : integer;
 begin
   if Message.WheelDelta > 0 then
     direction := -1
@@ -457,7 +463,34 @@ begin
       Self.SetZoomPercentage(FZoomPercentage + (direction * 10));
   end
   else
-    FVerticalScrollbar.Position := min(FVerticalScrollbar.Position + (direction * FVerticalScrollbar.PageSize), FVerticalScrollbar.Max - FVerticalScrollbar.PageSize);
+  begin
+    if FVerticalScrollbar.Visible then
+    begin
+      p := max(0, min(FVerticalScrollbar.Position + (direction * FVerticalScrollbar.PageSize), FVerticalScrollbar.Max - FVerticalScrollbar.PageSize));
+      if FVerticalScrollbar.Position <> p then
+        FVerticalScrollbar.Position := p
+      else
+      begin
+        if direction > 0 then
+        begin
+          if GotoNextPage then
+            FVerticalScrollbar.Position:= 0;
+        end
+        else
+        begin
+          if GotoPrevPage then
+            FVerticalScrollbar.Position:= FVerticalScrollbar.Max - FVerticalScrollbar.PageSize;
+        end;
+      end;
+    end
+    else
+    begin
+      if direction > 0 then
+        GotoNextPage
+      else
+        GotoPrevPage;
+    end;
+  end;
 end;
 
 procedure TPdfPageViewControl.CMMouseleave(var Message: TlMessage);
@@ -556,6 +589,19 @@ begin
   Result := FViewportY;
   if FVerticalScrollbar.Visible then
     Result := Result - FVerticalScrollbar.Position;
+end;
+
+procedure TPdfPageViewControl.NotifySubscribers(aEventKind: TPdfControlEventKind);
+var
+  f : integer;
+begin
+  for f := 0 to FEventsSubscriptions.Count - 1 do
+  begin
+    case aEventKind of
+      pcePageChanged:
+        (FEventsSubscriptions.Items[f] as TPdfPageViewControlEventsSubscription).ChangePage(FPageIndex);
+    end;
+  end;
 end;
 
 procedure TPdfPageViewControl.Paint;
@@ -755,6 +801,7 @@ begin
   FDrawOptions := cPdfControlDefaultDrawOptions;
   FHighlightTextColor := cHighLightTextColor;
   FRotation := prNormal;
+  FEventsSubscriptions := TObjectList.Create(true);
 
   FScaleMode := smFitAuto;
   FZoomPercentage := 100;
@@ -786,6 +833,7 @@ end;
 destructor TPdfPageViewControl.Destroy;
 begin
   FDocument.Free;
+  FEventsSubscriptions.Free;
   FHighlightTextRects.Free;
   inherited Destroy;
 end;
@@ -822,6 +870,7 @@ begin
     FPageIndex := aPageIndex;
     AdjustGeometry;
     Invalidate;
+    NotifySubscribers(pcePageChanged);
     Result := true;
   end;
 end;
@@ -861,6 +910,15 @@ begin
   inherited SetBounds(aLeft, aTop, aWidth, aHeight);
   AdjustGeometry;
   Invalidate;
+end;
+
+function TPdfPageViewControl.SubscribeToEvents(aSubscriberClass: TPdfPageViewControlEventsSubscriptionClass): TPdfPageViewControlEventsSubscription;
+var
+  newSubscription : TPdfPageViewControlEventsSubscription;
+begin
+  newSubscription := aSubscriberClass.Create();
+  FEventsSubscriptions.Add(newSubscription);
+  Result := newSubscription;
 end;
 
 end.

@@ -106,7 +106,7 @@ begin
   FCtrl := TPdfPageViewControl.Create(Self);
   FCtrl.Parent := Self;
   FCtrl.Align := alClient;
-  FCtrl.Color := clRed;
+  FCtrl.Color := clMoneyGreen;
   FCtrl.AllowFormEvents:= true;
   FCtrl.OnWebLinkClick:= @OnWebLinkClick;
   FThumbnailsCtrl.ViewControl := FCtrl;
